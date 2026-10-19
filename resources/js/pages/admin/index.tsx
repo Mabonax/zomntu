@@ -36,8 +36,134 @@ function VariantForm({ productId }: { productId: number }) {
                     className="border border-black/15 bg-white px-3 py-2 text-xs"
                 />
             ))}
-            <button className="sm:col-span-5 bg-black px-4 py-2 text-[10px] font-bold tracking-[.14em] text-white">
+            <button className="bg-black px-4 py-2 text-[10px] font-bold tracking-[.14em] text-white sm:col-span-5">
                 ADD VARIANT
+            </button>
+        </form>
+    );
+}
+
+function ProductEditor({ item }: { item: any }) {
+    const form = useForm({
+        name: item.name as string,
+        category: item.category as string,
+        price: (item.price_cents / 100).toFixed(2),
+        stock: String(item.stock),
+        is_active: Boolean(item.is_active),
+        is_featured: Boolean(item.is_featured),
+    });
+
+    return (
+        <form
+            onSubmit={(event) => {
+                event.preventDefault();
+                form.patch('/admin/products/' + item.id, {
+                    preserveScroll: true,
+                });
+            }}
+            className="mt-4 grid gap-2 border-t border-black/10 pt-4 sm:grid-cols-2"
+        >
+            <input
+                value={form.data.name}
+                onChange={(event) => form.setData('name', event.target.value)}
+                className="border border-black/15 px-3 py-2 text-xs"
+                aria-label="Product name"
+            />
+            <input
+                value={form.data.category}
+                onChange={(event) => form.setData('category', event.target.value)}
+                className="border border-black/15 px-3 py-2 text-xs"
+                aria-label="Category"
+            />
+            <input
+                value={form.data.price}
+                onChange={(event) => form.setData('price', event.target.value)}
+                className="border border-black/15 px-3 py-2 text-xs"
+                aria-label="Price"
+            />
+            <input
+                value={form.data.stock}
+                onChange={(event) => form.setData('stock', event.target.value)}
+                className="border border-black/15 px-3 py-2 text-xs"
+                aria-label="Base stock"
+            />
+            <label className="flex items-center gap-2 text-xs">
+                <input
+                    type="checkbox"
+                    checked={form.data.is_active}
+                    onChange={(event) =>
+                        form.setData('is_active', event.target.checked)
+                    }
+                />
+                Published
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+                <input
+                    type="checkbox"
+                    checked={form.data.is_featured}
+                    onChange={(event) =>
+                        form.setData('is_featured', event.target.checked)
+                    }
+                />
+                Featured
+            </label>
+            <button className="bg-black px-4 py-2 text-[10px] font-bold tracking-[.14em] text-white sm:col-span-2">
+                SAVE PRODUCT
+            </button>
+        </form>
+    );
+}
+
+function OrderActions({ order }: { order: any }) {
+    const form = useForm({
+        status:
+            order.status === 'paid'
+                ? 'processing'
+                : order.status === 'processing'
+                  ? 'shipped'
+                  : 'delivered',
+        tracking_number: order.tracking_number ?? '',
+    });
+
+    if (!['paid', 'processing', 'shipped'].includes(order.status)) {
+        return (
+            <span className="text-[10px] uppercase tracking-[.12em] text-black/40">
+                {order.status === 'payment_review'
+                    ? 'Review required'
+                    : 'No action'}
+            </span>
+        );
+    }
+
+    const label =
+        order.status === 'paid'
+            ? 'START PROCESSING'
+            : order.status === 'processing'
+              ? 'MARK SHIPPED'
+              : 'MARK DELIVERED';
+
+    return (
+        <form
+            onSubmit={(event) => {
+                event.preventDefault();
+                form.patch('/admin/orders/' + order.id, {
+                    preserveScroll: true,
+                });
+            }}
+            className="flex min-w-52 flex-col gap-2"
+        >
+            {order.status === 'processing' && (
+                <input
+                    value={form.data.tracking_number}
+                    onChange={(event) =>
+                        form.setData('tracking_number', event.target.value)
+                    }
+                    placeholder="Courier tracking number"
+                    className="border border-black/15 px-3 py-2 text-xs"
+                />
+            )}
+            <button className="bg-black px-3 py-2 text-[9px] font-bold tracking-[.12em] text-white">
+                {label}
             </button>
         </form>
     );
@@ -100,7 +226,9 @@ export default function Admin({ products, coupons, orders }: any) {
                         ].map(([label, value]) => (
                             <div key={String(label)} className="bg-white p-6">
                                 <p className="text-xs tracking-[.2em]">{label}</p>
-                                <p className="mt-2 text-4xl font-semibold">{value}</p>
+                                <p className="mt-2 text-4xl font-semibold">
+                                    {value}
+                                </p>
                             </div>
                         ))}
                     </section>
@@ -145,7 +273,10 @@ export default function Admin({ products, coupons, orders }: any) {
                             <textarea
                                 value={product.data.description}
                                 onChange={(event) =>
-                                    product.setData('description', event.target.value)
+                                    product.setData(
+                                        'description',
+                                        event.target.value,
+                                    )
                                 }
                                 placeholder="description"
                                 className="mt-3 min-h-24 w-full border border-black/15 p-3 text-sm"
@@ -195,17 +326,45 @@ export default function Admin({ products, coupons, orders }: any) {
                                 CREATE COUPON
                             </h2>
                             <div className="mt-5 grid gap-3">
-                                {Object.keys(coupon.data).map((key) => (
+                                <input
+                                    value={coupon.data.code}
+                                    onChange={(event) =>
+                                        coupon.setData('code', event.target.value)
+                                    }
+                                    placeholder="coupon code"
+                                    className="border border-black/15 px-3 py-2 text-sm"
+                                />
+                                <select
+                                    value={coupon.data.type}
+                                    onChange={(event) =>
+                                        coupon.setData('type', event.target.value)
+                                    }
+                                    className="border border-black/15 bg-white px-3 py-2 text-sm"
+                                >
+                                    <option value="percent">Percentage</option>
+                                    <option value="fixed">Fixed rand amount</option>
+                                </select>
+                                {(
+                                    [
+                                        'value',
+                                        'minimum',
+                                        'usage_limit',
+                                        'ends_at',
+                                    ] as const
+                                ).map((key) => (
                                     <input
                                         key={key}
-                                        value={(coupon.data as any)[key]}
+                                        value={coupon.data[key]}
                                         onChange={(event) =>
-                                            coupon.setData(
-                                                key as keyof typeof coupon.data,
-                                                event.target.value,
-                                            )
+                                            coupon.setData(key, event.target.value)
                                         }
-                                        placeholder={key.replaceAll('_', ' ')}
+                                        placeholder={
+                                            key === 'value'
+                                                ? coupon.data.type === 'fixed'
+                                                    ? 'discount value (R)'
+                                                    : 'discount value (%)'
+                                                : key.replaceAll('_', ' ')
+                                        }
                                         className="border border-black/15 px-3 py-2 text-sm"
                                     />
                                 ))}
@@ -217,16 +376,13 @@ export default function Admin({ products, coupons, orders }: any) {
                     </section>
 
                     <section className="bg-white p-6">
-                        <div className="flex items-end justify-between">
-                            <div>
-                                <h2 className="font-semibold tracking-[.18em]">
-                                    CATALOGUE
-                                </h2>
-                                <p className="mt-2 text-xs text-black/50">
-                                    Products are published from this workspace. Add sizes as variants.
-                                </p>
-                            </div>
-                        </div>
+                        <h2 className="font-semibold tracking-[.18em]">
+                            CATALOGUE
+                        </h2>
+                        <p className="mt-2 text-xs text-black/50">
+                            Publish, price and stock products here. Use variants for
+                            sizes or colour-specific inventory.
+                        </p>
                         <div className="mt-6 grid gap-5 lg:grid-cols-2">
                             {products.map((item: any) => (
                                 <article
@@ -277,6 +433,7 @@ export default function Admin({ products, coupons, orders }: any) {
                                             </p>
                                         </div>
                                     </div>
+                                    <ProductEditor item={item} />
                                     <VariantForm productId={item.id} />
                                 </article>
                             ))}
@@ -287,6 +444,10 @@ export default function Admin({ products, coupons, orders }: any) {
                         <h2 className="font-semibold tracking-[.18em]">
                             ORDER FULFILMENT
                         </h2>
+                        <p className="mt-2 text-xs text-black/50">
+                            Payment status comes from verified PayFast events.
+                            Administrators only move paid orders through fulfilment.
+                        </p>
                         <div className="mt-5 overflow-x-auto">
                             <table className="w-full text-left text-sm">
                                 <thead>
@@ -296,34 +457,30 @@ export default function Admin({ products, coupons, orders }: any) {
                                         <th>Total</th>
                                         <th>Status</th>
                                         <th>Tracking</th>
-                                        <th />
+                                        <th>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {orders.map((order: any) => (
                                         <tr
                                             key={order.id}
-                                            className="border-b border-black/5"
+                                            className="border-b border-black/5 align-top"
                                         >
-                                            <td className="py-3">{order.reference}</td>
-                                            <td>{order.user?.email}</td>
-                                            <td>{money(order.total_cents)}</td>
-                                            <td>{order.status}</td>
-                                            <td>{order.tracking_number || '—'}</td>
-                                            <td>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        router.patch(
-                                                            '/admin/orders/' + order.id,
-                                                            { status: 'processing' },
-                                                            { preserveScroll: true },
-                                                        )
-                                                    }
-                                                    className="text-xs underline"
-                                                >
-                                                    Mark processing
-                                                </button>
+                                            <td className="py-4">{order.reference}</td>
+                                            <td className="py-4">
+                                                {order.user?.email ?? 'Deleted account'}
+                                            </td>
+                                            <td className="py-4">
+                                                {money(order.total_cents)}
+                                            </td>
+                                            <td className="py-4 capitalize">
+                                                {order.status.replaceAll('_', ' ')}
+                                            </td>
+                                            <td className="py-4">
+                                                {order.tracking_number || '—'}
+                                            </td>
+                                            <td className="py-4">
+                                                <OrderActions order={order} />
                                             </td>
                                         </tr>
                                     ))}
