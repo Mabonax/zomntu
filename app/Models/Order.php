@@ -2,10 +2,31 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property int $user_id
+ * @property string $reference
+ * @property string $status
+ * @property int $subtotal_cents
+ * @property int $discount_cents
+ * @property int $shipping_cents
+ * @property int $total_cents
+ * @property string|null $coupon_code
+ * @property string|null $payment_transaction_id
+ * @property string|null $tracking_number
+ * @property Carbon|null $reservation_expires_at
+ * @property Carbon|null $paid_at
+ * @property Carbon|null $shipped_at
+ * @property Carbon|null $delivered_at
+ * @property-read User $user
+ * @property-read Collection<int, OrderItem> $items
+ */
 class Order extends Model
 {
     protected $fillable = [
@@ -41,11 +62,13 @@ class Order extends Model
         ];
     }
 
+    /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
+    /** @return HasMany<OrderItem, $this> */
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);

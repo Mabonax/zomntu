@@ -10,6 +10,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
+/**
+ * @property int $id
+ * @property string $name
+ * @property string $email
+ * @property string $role
+ */
 #[Fillable(['name', 'email', 'workos_id', 'avatar', 'role'])]
 #[Hidden(['workos_id', 'remember_token'])]
 class User extends Authenticatable
@@ -30,6 +36,7 @@ class User extends Authenticatable
         return $this->role === 'administrator';
     }
 
+    /** @return HasMany<Order, $this> */
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
