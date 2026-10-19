@@ -2,9 +2,10 @@
 
 use App\Models\Product;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\WorkOS\Http\Middleware\ValidateSessionWithWorkOS;
 
-uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+uses(RefreshDatabase::class);
 
 test('storefront and shop render', function () {
     Product::query()->create([
