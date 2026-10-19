@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Coupon;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -34,27 +35,41 @@ class CheckoutController extends Controller
                 ->get()
                 ->keyBy('id');
 
+            $variantIds = $cart->pluck('variant_id')->filter()->values();
+            $variants = ProductVariant::query()
+                ->whereIn('id', $variantIds)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
             $subtotal = 0;
             $lines = [];
 
             foreach ($cart as $row) {
                 $product = $products->get($row['product_id']);
+                abort_unless($product && $product->is_active, 422, 'A product is no longer available.');
 
-                abort_unless(
-                    $product && $product->is_active && $product->stock >= $row['quantity'],
-                    422,
-                    'A product is no longer available.'
-                );
+                $variant = isset($row['variant_id']) ? $variants->get($row['variant_id']) : null;
 
-                $line = $product->price_cents * $row['quantity'];
+                if ($product->variants()->exists()) {
+                    abort_unless($variant && $variant->product_id === $product->id && $variant->is_active, 422, 'A selected size is no longer available.');
+                    abort_if($variant->availableStock() < $row['quantity'], 422, 'A selected size has sold out.');
+                    $variant->increment('reserved_stock', $row['quantity']);
+                    $unitPrice = $variant->price_cents ?? $product->price_cents;
+                } else {
+                    abort_if($product->stock < $row['quantity'], 422, 'A product has sold out.');
+                    $product->decrement('stock', $row['quantity']);
+                    $unitPrice = $product->price_cents;
+                }
+
+                $line = $unitPrice * $row['quantity'];
                 $subtotal += $line;
-                $lines[] = [$product, $row, $line];
+                $lines[] = [$product, $variant, $row, $unitPrice, $line];
             }
 
             $coupon = filled($data['coupon'] ?? null)
                 ? Coupon::query()->whereRaw('UPPER(code) = ?', [strtoupper($data['coupon'])])->first()
                 : null;
-
             $discount = $coupon?->discountFor($subtotal) ?? 0;
             $shipping = $subtotal - $discount >= 100000 ? 0 : 9900;
 
@@ -66,17 +81,19 @@ class CheckoutController extends Controller
                 'shipping_cents' => $shipping,
                 'total_cents' => $subtotal - $discount + $shipping,
                 'coupon_code' => $coupon?->code,
+                'reservation_expires_at' => now()->addMinutes(45),
                 ...collect($data)->except('coupon')->all(),
             ]);
 
-            foreach ($lines as [$product, $row, $line]) {
+            foreach ($lines as [$product, $variant, $row, $unitPrice, $line]) {
                 $order->items()->create([
                     'product_id' => $product->id,
+                    'product_variant_id' => $variant?->id,
                     'name' => $product->name,
-                    'sku' => $product->sku,
-                    'size' => $row['size'] ?? null,
-                    'colour' => $product->colour,
-                    'unit_price_cents' => $product->price_cents,
+                    'sku' => $variant?->sku ?? $product->sku,
+                    'size' => $variant?->size,
+                    'colour' => $variant?->colour ?? $product->colour,
+                    'unit_price_cents' => $unitPrice,
                     'quantity' => $row['quantity'],
                     'line_total_cents' => $line,
                 ]);
@@ -99,7 +116,6 @@ class CheckoutController extends Controller
 
         $request->session()->forget('cart');
 
-        return response($checkout->toHtml())
-            ->header('Cache-Control', 'no-store');
+        return response($checkout->toHtml())->header('Cache-Control', 'no-store');
     }
 }

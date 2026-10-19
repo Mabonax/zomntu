@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -16,7 +17,7 @@ class AdminController extends Controller
     public function index(): Response
     {
         return Inertia::render('admin/index', [
-            'products' => Product::latest()->take(100)->get(),
+            'products' => Product::with(['variants', 'images'])->latest()->take(100)->get(),
             'coupons' => Coupon::latest()->take(100)->get(),
             'orders' => Order::with('user')->latest()->take(100)->get(),
         ]);
@@ -32,15 +33,45 @@ class AdminController extends Controller
             'price' => ['required', 'numeric', 'min:0'],
             'gsm' => ['nullable', 'integer', 'min:100', 'max:600'],
             'colour' => ['nullable', 'string', 'max:80'],
-            'image_url' => ['nullable', 'url', 'max:1000'],
             'stock' => ['required', 'integer', 'min:0'],
             'is_featured' => ['boolean'],
+            'image' => ['nullable', 'image', 'max:5120'],
         ]);
 
-        Product::create([
-            ...collect($data)->except('price')->all(),
+        $product = Product::create([
+            ...collect($data)->except(['price', 'image'])->all(),
             'slug' => Str::slug($data['name']).'-'.strtolower(Str::random(5)),
             'price_cents' => (int) round($data['price'] * 100),
+        ]);
+
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('products', 'public');
+            $product->images()->create([
+                'path' => Storage::disk('public')->url($path),
+                'alt' => $product->name,
+                'position' => 0,
+            ]);
+            $product->update(['image_url' => Storage::disk('public')->url($path)]);
+        }
+
+        return back();
+    }
+
+    public function storeVariant(Request $request, Product $product): RedirectResponse
+    {
+        $data = $request->validate([
+            'sku' => ['required', 'string', 'max:80', 'unique:product_variants,sku'],
+            'size' => ['nullable', 'string', 'max:40'],
+            'colour' => ['nullable', 'string', 'max:80'],
+            'price' => ['nullable', 'numeric', 'min:0'],
+            'stock' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $product->variants()->create([
+            ...collect($data)->except('price')->all(),
+            'price_cents' => filled($data['price'] ?? null)
+                ? (int) round($data['price'] * 100)
+                : null,
         ]);
 
         return back();
@@ -88,7 +119,7 @@ class AdminController extends Controller
     public function updateOrder(Request $request, Order $order): RedirectResponse
     {
         $data = $request->validate([
-            'status' => ['required', 'in:paid,processing,shipped,delivered,cancelled'],
+            'status' => ['required', 'in:paid,payment_review,processing,shipped,delivered,cancelled'],
             'tracking_number' => ['nullable', 'string', 'max:150'],
         ]);
 

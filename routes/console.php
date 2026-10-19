@@ -2,6 +2,12 @@
 
 use Illuminate\Support\Facades\Schedule;
 
+Schedule::command('orders:release-expired')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
 if (class_exists(\Vmt\PayFast\Console\DispatchOutboxCommand::class)) {
-    Schedule::command('payfast:dispatch-outbox')->everyMinute()->withoutOverlapping();
+    Schedule::command('payfast:dispatch-outbox')
+        ->everyMinute()
+        ->withoutOverlapping();
 }

@@ -1,7 +1,61 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 
+const money = (cents: number) =>
+    new Intl.NumberFormat('en-ZA', {
+        style: 'currency',
+        currency: 'ZAR',
+        maximumFractionDigits: 0,
+    }).format(cents / 100);
+
+function VariantForm({ productId }: { productId: number }) {
+    const form = useForm({
+        sku: '',
+        size: '',
+        colour: '',
+        price: '',
+        stock: '0',
+    });
+
+    return (
+        <form
+            onSubmit={(event) => {
+                event.preventDefault();
+                form.post('/admin/products/' + productId + '/variants', {
+                    preserveScroll: true,
+                    onSuccess: () => form.reset(),
+                });
+            }}
+            className="mt-4 grid gap-2 rounded border border-black/10 bg-[#faf9f6] p-3 sm:grid-cols-5"
+        >
+            {(['sku', 'size', 'colour', 'price', 'stock'] as const).map((key) => (
+                <input
+                    key={key}
+                    value={form.data[key]}
+                    onChange={(event) => form.setData(key, event.target.value)}
+                    placeholder={key}
+                    className="border border-black/15 bg-white px-3 py-2 text-xs"
+                />
+            ))}
+            <button className="sm:col-span-5 bg-black px-4 py-2 text-[10px] font-bold tracking-[.14em] text-white">
+                ADD VARIANT
+            </button>
+        </form>
+    );
+}
+
 export default function Admin({ products, coupons, orders }: any) {
-    const product = useForm({
+    const product = useForm<{
+        name: string;
+        sku: string;
+        category: string;
+        description: string;
+        price: string;
+        gsm: string;
+        colour: string;
+        stock: string;
+        is_featured: boolean;
+        image: File | null;
+    }>({
         name: '',
         sku: '',
         category: 'Tees',
@@ -9,10 +63,11 @@ export default function Admin({ products, coupons, orders }: any) {
         price: '',
         gsm: '240',
         colour: 'Black',
-        image_url: '',
         stock: '0',
         is_featured: true,
+        image: null,
     });
+
     const coupon = useForm({
         code: '',
         type: 'percent',
@@ -26,37 +81,28 @@ export default function Admin({ products, coupons, orders }: any) {
         <>
             <Head title="Admin — ZOMNTU" />
             <div className="min-h-screen bg-[#f3f0e9]">
-                <header className="flex h-16 items-center justify-between bg-black px-8 text-white">
+                <header className="flex h-16 items-center justify-between bg-black px-6 text-white lg:px-8">
                     <Link href="/" className="font-black italic">
                         ZOMNTU ADMIN
                     </Link>
-                    <Link
-                        href="/account/orders"
-                        className="text-xs tracking-[.2em]"
-                    >
-                        STORE VIEW
-                    </Link>
+                    <div className="flex gap-6 text-xs tracking-[.18em]">
+                        <Link href="/shop">STORE</Link>
+                        <Link href="/account/orders">MY ORDERS</Link>
+                    </div>
                 </header>
+
                 <main className="mx-auto max-w-7xl space-y-10 px-6 py-10">
                     <section className="grid gap-6 md:grid-cols-3">
-                        <div className="bg-white p-6">
-                            <p className="text-xs tracking-[.2em]">PRODUCTS</p>
-                            <p className="mt-2 text-4xl font-semibold">
-                                {products.length}
-                            </p>
-                        </div>
-                        <div className="bg-white p-6">
-                            <p className="text-xs tracking-[.2em]">COUPONS</p>
-                            <p className="mt-2 text-4xl font-semibold">
-                                {coupons.length}
-                            </p>
-                        </div>
-                        <div className="bg-white p-6">
-                            <p className="text-xs tracking-[.2em]">ORDERS</p>
-                            <p className="mt-2 text-4xl font-semibold">
-                                {orders.length}
-                            </p>
-                        </div>
+                        {[
+                            ['PRODUCTS', products.length],
+                            ['COUPONS', coupons.length],
+                            ['ORDERS', orders.length],
+                        ].map(([label, value]) => (
+                            <div key={String(label)} className="bg-white p-6">
+                                <p className="text-xs tracking-[.2em]">{label}</p>
+                                <p className="mt-2 text-4xl font-semibold">{value}</p>
+                            </div>
+                        ))}
                     </section>
 
                     <section className="grid gap-8 lg:grid-cols-2">
@@ -64,6 +110,7 @@ export default function Admin({ products, coupons, orders }: any) {
                             onSubmit={(event) => {
                                 event.preventDefault();
                                 product.post('/admin/products', {
+                                    forceFormData: true,
                                     onSuccess: () => product.reset(),
                                 });
                             }}
@@ -73,44 +120,51 @@ export default function Admin({ products, coupons, orders }: any) {
                                 ADD PRODUCT
                             </h2>
                             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                                {Object.keys(product.data)
-                                    .filter(
-                                        (key) =>
-                                            ![
-                                                'description',
-                                                'is_featured',
-                                            ].includes(key),
-                                    )
-                                    .map((key) => (
-                                        <input
-                                            key={key}
-                                            value={(product.data as any)[key]}
-                                            onChange={(event) =>
-                                                product.setData(
-                                                    key as any,
-                                                    event.target.value,
-                                                )
-                                            }
-                                            placeholder={key.replaceAll(
-                                                '_',
-                                                ' ',
-                                            )}
-                                            className="border border-black/15 px-3 py-2 text-sm"
-                                        />
-                                    ))}
+                                {(
+                                    [
+                                        'name',
+                                        'sku',
+                                        'category',
+                                        'price',
+                                        'gsm',
+                                        'colour',
+                                        'stock',
+                                    ] as const
+                                ).map((key) => (
+                                    <input
+                                        key={key}
+                                        value={product.data[key] as string}
+                                        onChange={(event) =>
+                                            product.setData(key, event.target.value)
+                                        }
+                                        placeholder={key.replaceAll('_', ' ')}
+                                        className="border border-black/15 px-3 py-2 text-sm"
+                                    />
+                                ))}
                             </div>
                             <textarea
                                 value={product.data.description}
                                 onChange={(event) =>
-                                    product.setData(
-                                        'description',
-                                        event.target.value,
-                                    )
+                                    product.setData('description', event.target.value)
                                 }
                                 placeholder="description"
                                 className="mt-3 min-h-24 w-full border border-black/15 p-3 text-sm"
                             />
-                            <label className="mt-3 flex items-center gap-2 text-sm">
+                            <label className="mt-3 block text-xs font-semibold tracking-[.12em]">
+                                PRODUCT IMAGE
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(event) =>
+                                        product.setData(
+                                            'image',
+                                            event.target.files?.[0] ?? null,
+                                        )
+                                    }
+                                    className="mt-2 block w-full text-sm"
+                                />
+                            </label>
+                            <label className="mt-4 flex items-center gap-2 text-sm">
                                 <input
                                     type="checkbox"
                                     checked={product.data.is_featured}
@@ -147,7 +201,7 @@ export default function Admin({ products, coupons, orders }: any) {
                                         value={(coupon.data as any)[key]}
                                         onChange={(event) =>
                                             coupon.setData(
-                                                key as any,
+                                                key as keyof typeof coupon.data,
                                                 event.target.value,
                                             )
                                         }
@@ -163,8 +217,75 @@ export default function Admin({ products, coupons, orders }: any) {
                     </section>
 
                     <section className="bg-white p-6">
+                        <div className="flex items-end justify-between">
+                            <div>
+                                <h2 className="font-semibold tracking-[.18em]">
+                                    CATALOGUE
+                                </h2>
+                                <p className="mt-2 text-xs text-black/50">
+                                    Products are published from this workspace. Add sizes as variants.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="mt-6 grid gap-5 lg:grid-cols-2">
+                            {products.map((item: any) => (
+                                <article
+                                    key={item.id}
+                                    className="border border-black/10 p-4"
+                                >
+                                    <div className="flex gap-4">
+                                        <div className="h-24 w-20 shrink-0 bg-[#eee8dd]">
+                                            {item.image_url && (
+                                                <img
+                                                    src={item.image_url}
+                                                    alt={item.name}
+                                                    className="h-full w-full object-cover"
+                                                />
+                                            )}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex justify-between gap-4">
+                                                <div>
+                                                    <p className="font-semibold">
+                                                        {item.name}
+                                                    </p>
+                                                    <p className="mt-1 text-xs text-black/50">
+                                                        {item.sku} · {item.category}
+                                                    </p>
+                                                </div>
+                                                <p className="text-sm">
+                                                    {money(item.price_cents)}
+                                                </p>
+                                            </div>
+                                            <p className="mt-3 text-xs">
+                                                {item.variants?.length
+                                                    ? item.variants
+                                                          .map(
+                                                              (variant: any) =>
+                                                                  (variant.size ??
+                                                                      variant.colour) +
+                                                                  ' (' +
+                                                                  Math.max(
+                                                                      0,
+                                                                      variant.stock -
+                                                                          variant.reserved_stock,
+                                                                  ) +
+                                                                  ')',
+                                                          )
+                                                          .join(' · ')
+                                                    : 'Base stock: ' + item.stock}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <VariantForm productId={item.id} />
+                                </article>
+                            ))}
+                        </div>
+                    </section>
+
+                    <section className="bg-white p-6">
                         <h2 className="font-semibold tracking-[.18em]">
-                            ORDERS
+                            ORDER FULFILMENT
                         </h2>
                         <div className="mt-5 overflow-x-auto">
                             <table className="w-full text-left text-sm">
@@ -172,6 +293,7 @@ export default function Admin({ products, coupons, orders }: any) {
                                     <tr className="border-b">
                                         <th className="py-3">Reference</th>
                                         <th>Customer</th>
+                                        <th>Total</th>
                                         <th>Status</th>
                                         <th>Tracking</th>
                                         <th />
@@ -183,24 +305,19 @@ export default function Admin({ products, coupons, orders }: any) {
                                             key={order.id}
                                             className="border-b border-black/5"
                                         >
-                                            <td className="py-3">
-                                                {order.reference}
-                                            </td>
+                                            <td className="py-3">{order.reference}</td>
                                             <td>{order.user?.email}</td>
+                                            <td>{money(order.total_cents)}</td>
                                             <td>{order.status}</td>
-                                            <td>
-                                                {order.tracking_number || '—'}
-                                            </td>
+                                            <td>{order.tracking_number || '—'}</td>
                                             <td>
                                                 <button
                                                     type="button"
                                                     onClick={() =>
                                                         router.patch(
-                                                            '/admin/orders/' +
-                                                                order.id,
-                                                            {
-                                                                status: 'processing',
-                                                            },
+                                                            '/admin/orders/' + order.id,
+                                                            { status: 'processing' },
+                                                            { preserveScroll: true },
                                                         )
                                                     }
                                                     className="text-xs underline"
