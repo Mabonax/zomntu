@@ -7,10 +7,12 @@ use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 
 class AdminController extends Controller
 {
@@ -25,6 +27,7 @@ class AdminController extends Controller
 
     public function storeProduct(Request $request): RedirectResponse
     {
+        /** @var array{name:string,sku:string,category:string,description?:string|null,price:numeric-string|int|float,gsm?:int|null,colour?:string|null,stock:int,is_featured?:bool,image?:mixed} $data */
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'sku' => ['required', 'string', 'max:80', 'unique:products,sku'],
@@ -39,13 +42,24 @@ class AdminController extends Controller
         ]);
 
         $product = Product::create([
-            ...collect($data)->except(['price', 'image'])->all(),
+            ...Arr::except($data, ['price', 'image']),
             'slug' => Str::slug($data['name']).'-'.strtolower(Str::random(5)),
-            'price_cents' => (int) round($data['price'] * 100),
+            'price_cents' => (int) round((float) $data['price'] * 100),
         ]);
 
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('products', 'public');
+            $file = $request->file('image');
+
+            if ($file === null) {
+                throw new RuntimeException('Uploaded product image was not available.');
+            }
+
+            $path = $file->store('products', 'public');
+
+            if (! is_string($path)) {
+                throw new RuntimeException('Unable to store product image.');
+            }
+
             $url = Storage::disk('public')->url($path);
 
             $product->images()->create([
@@ -62,6 +76,7 @@ class AdminController extends Controller
 
     public function storeVariant(Request $request, Product $product): RedirectResponse
     {
+        /** @var array{sku:string,size?:string|null,colour?:string|null,price?:numeric-string|int|float|null,stock:int} $data */
         $data = $request->validate([
             'sku' => ['required', 'string', 'max:80', 'unique:product_variants,sku'],
             'size' => ['nullable', 'string', 'max:40'],
@@ -71,9 +86,9 @@ class AdminController extends Controller
         ]);
 
         $product->variants()->create([
-            ...collect($data)->except('price')->all(),
-            'price_cents' => filled($data['price'] ?? null)
-                ? (int) round($data['price'] * 100)
+            ...Arr::except($data, ['price']),
+            'price_cents' => isset($data['price'])
+                ? (int) round((float) $data['price'] * 100)
                 : null,
         ]);
 
@@ -82,6 +97,7 @@ class AdminController extends Controller
 
     public function updateProduct(Request $request, Product $product): RedirectResponse
     {
+        /** @var array{name:string,category:string,price:numeric-string|int|float,stock:int,is_active?:bool,is_featured?:bool} $data */
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'category' => ['required', 'string', 'max:80'],
@@ -92,8 +108,8 @@ class AdminController extends Controller
         ]);
 
         $product->update([
-            ...collect($data)->except('price')->all(),
-            'price_cents' => (int) round($data['price'] * 100),
+            ...Arr::except($data, ['price']),
+            'price_cents' => (int) round((float) $data['price'] * 100),
         ]);
 
         return back();
@@ -101,6 +117,7 @@ class AdminController extends Controller
 
     public function storeCoupon(Request $request): RedirectResponse
     {
+        /** @var array{code:string,type:string,value:int,minimum?:numeric-string|int|float|null,usage_limit?:int|null,ends_at?:string|null} $data */
         $data = $request->validate([
             'code' => ['required', 'string', 'max:64', 'unique:coupons,code'],
             'type' => ['required', 'in:percent,fixed'],
@@ -111,9 +128,9 @@ class AdminController extends Controller
         ]);
 
         Coupon::create([
-            ...collect($data)->except('minimum')->all(),
+            ...Arr::except($data, ['minimum']),
             'code' => strtoupper($data['code']),
-            'minimum_cents' => (int) round(($data['minimum'] ?? 0) * 100),
+            'minimum_cents' => (int) round((float) ($data['minimum'] ?? 0) * 100),
         ]);
 
         return back();
@@ -121,6 +138,7 @@ class AdminController extends Controller
 
     public function updateOrder(Request $request, Order $order): RedirectResponse
     {
+        /** @var array{status:string,tracking_number?:string|null} $data */
         $data = $request->validate([
             'status' => ['required', 'in:processing,shipped,delivered'],
             'tracking_number' => ['nullable', 'string', 'max:150'],
@@ -135,7 +153,7 @@ class AdminController extends Controller
         abort_unless(
             in_array($data['status'], $allowedTransitions[$order->status] ?? [], true),
             422,
-            'Invalid order status transition.'
+            'Invalid order status transition.',
         );
 
         if ($data['status'] === 'shipped') {

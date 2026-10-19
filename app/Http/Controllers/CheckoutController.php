@@ -7,14 +7,18 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
 
 class CheckoutController extends Controller
 {
-    public function __invoke(Request $request)
+    public function __invoke(Request $request): Response
     {
+        /** @var array{shipping_name:string,shipping_phone?:string|null,shipping_address:string,shipping_city:string,shipping_province:string,shipping_postal_code?:string|null,coupon?:string|null} $data */
         $data = $request->validate([
             'shipping_name' => ['required', 'string', 'max:255'],
             'shipping_phone' => ['nullable', 'string', 'max:50'],
@@ -25,10 +29,15 @@ class CheckoutController extends Controller
             'coupon' => ['nullable', 'string', 'max:64'],
         ]);
 
-        $cart = collect($request->session()->get('cart', []));
+        /** @var array<string, array{product_id:int,variant_id:int|null,quantity:int}> $rawCart */
+        $rawCart = $request->session()->get('cart', []);
+
+        /** @var Collection<string, array{product_id:int,variant_id:int|null,quantity:int}> $cart */
+        $cart = collect($rawCart);
+
         abort_if($cart->isEmpty(), 422, 'Your cart is empty.');
 
-        $order = DB::transaction(function () use ($request, $data, $cart) {
+        $order = DB::transaction(function () use ($request, $data, $cart): Order {
             $products = Product::query()
                 ->whereIn('id', $cart->pluck('product_id'))
                 ->lockForUpdate()
@@ -43,19 +52,29 @@ class CheckoutController extends Controller
                 ->keyBy('id');
 
             $subtotal = 0;
+            /** @var array<int, array{0:Product,1:ProductVariant|null,2:array{product_id:int,variant_id:int|null,quantity:int},3:int,4:int}> $lines */
             $lines = [];
 
             foreach ($cart as $row) {
-                $product = $products->get($row['product_id']);
-                abort_unless($product && $product->is_active, 422, 'A product is no longer available.');
+                $productCandidate = $products->get($row['product_id']);
 
-                $variant = isset($row['variant_id']) ? $variants->get($row['variant_id']) : null;
+                abort_unless($productCandidate instanceof Product && $productCandidate->is_active, 422, 'A product is no longer available.');
+
+                $product = $productCandidate;
+                $variantCandidate = $row['variant_id'] !== null
+                    ? $variants->get($row['variant_id'])
+                    : null;
+                $variant = $variantCandidate instanceof ProductVariant
+                    ? $variantCandidate
+                    : null;
 
                 if ($product->variants()->exists()) {
                     abort_unless(
-                        $variant && $variant->product_id === $product->id && $variant->is_active,
+                        $variant instanceof ProductVariant
+                            && $variant->product_id === $product->id
+                            && $variant->is_active,
                         422,
-                        'A selected size is no longer available.'
+                        'A selected size is no longer available.',
                     );
                     abort_if($variant->availableStock() < $row['quantity'], 422, 'A selected size has sold out.');
 
@@ -74,7 +93,9 @@ class CheckoutController extends Controller
             }
 
             $coupon = filled($data['coupon'] ?? null)
-                ? Coupon::query()->whereRaw('UPPER(code) = ?', [strtoupper($data['coupon'])])->first()
+                ? Coupon::query()
+                    ->whereRaw('UPPER(code) = ?', [strtoupper((string) $data['coupon'])])
+                    ->first()
                 : null;
             $discount = $coupon?->discountFor($subtotal) ?? 0;
             $shipping = $subtotal - $discount >= 100000 ? 0 : 9900;
@@ -88,17 +109,17 @@ class CheckoutController extends Controller
                 'total_cents' => $subtotal - $discount + $shipping,
                 'coupon_code' => $coupon?->code,
                 'reservation_expires_at' => now()->addMinutes(45),
-                ...collect($data)->except('coupon')->all(),
+                ...Arr::except($data, ['coupon']),
             ]);
 
             foreach ($lines as [$product, $variant, $row, $unitPrice, $line]) {
                 $order->items()->create([
                     'product_id' => $product->id,
-                    'product_variant_id' => $variant?->id,
+                    'product_variant_id' => $variant instanceof ProductVariant ? $variant->id : null,
                     'name' => $product->name,
-                    'sku' => $variant?->sku ?? $product->sku,
-                    'size' => $variant?->size,
-                    'colour' => $variant?->colour ?? $product->colour,
+                    'sku' => $variant instanceof ProductVariant ? $variant->sku : $product->sku,
+                    'size' => $variant instanceof ProductVariant ? $variant->size : null,
+                    'colour' => $variant instanceof ProductVariant ? $variant->colour : $product->colour,
                     'unit_price_cents' => $unitPrice,
                     'quantity' => $row['quantity'],
                     'line_total_cents' => $line,
@@ -123,10 +144,24 @@ class CheckoutController extends Controller
             orderReference: $order->reference,
         );
 
-        $checkout = $gateway->createCheckout($checkoutRequest);
+        if (! is_callable([$gateway, 'createCheckout'])) {
+            throw new RuntimeException('Configured PayFast gateway cannot create a checkout.');
+        }
+
+        $checkout = call_user_func([$gateway, 'createCheckout'], $checkoutRequest);
+
+        if (! is_object($checkout) || ! is_callable([$checkout, 'toHtml'])) {
+            throw new RuntimeException('PayFast checkout response is invalid.');
+        }
+
+        $html = call_user_func([$checkout, 'toHtml']);
+
+        if (! is_string($html)) {
+            throw new RuntimeException('PayFast checkout HTML is invalid.');
+        }
 
         $request->session()->forget('cart');
 
-        return response($checkout->toHtml())->header('Cache-Control', 'no-store');
+        return response($html)->header('Cache-Control', 'no-store');
     }
 }
