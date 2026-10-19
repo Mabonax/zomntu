@@ -30,7 +30,7 @@ Route::middleware(['auth', ValidateSessionWithWorkOS::class])->group(function ()
         Route::patch('/orders/{order}', [AdminController::class, 'updateOrder'])->name('orders.update');
     });
 
-    Route::redirect('/dashboard', '/account/orders')->name('dashboard');
+    Route::get('/dashboard', fn () => redirect()->route('account.orders'))->name('dashboard');
 });
 
 require __DIR__.'/settings.php';
