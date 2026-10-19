@@ -52,12 +52,18 @@ class CheckoutController extends Controller
                 $variant = isset($row['variant_id']) ? $variants->get($row['variant_id']) : null;
 
                 if ($product->variants()->exists()) {
-                    abort_unless($variant && $variant->product_id === $product->id && $variant->is_active, 422, 'A selected size is no longer available.');
+                    abort_unless(
+                        $variant && $variant->product_id === $product->id && $variant->is_active,
+                        422,
+                        'A selected size is no longer available.'
+                    );
                     abort_if($variant->availableStock() < $row['quantity'], 422, 'A selected size has sold out.');
+
                     $variant->increment('reserved_stock', $row['quantity']);
                     $unitPrice = $variant->price_cents ?? $product->price_cents;
                 } else {
                     abort_if($product->stock < $row['quantity'], 422, 'A product has sold out.');
+
                     $product->decrement('stock', $row['quantity']);
                     $unitPrice = $product->price_cents;
                 }
@@ -102,17 +108,22 @@ class CheckoutController extends Controller
             return $order;
         });
 
-        if (! interface_exists(\Vmt\PayFast\Contracts\PaymentGateway::class)) {
+        $gatewayContract = 'Vmt\\PayFast\\Contracts\\PaymentGateway';
+        $checkoutRequestClass = 'Vmt\\PayFast\\Data\\CheckoutRequest';
+
+        if (! interface_exists($gatewayContract) || ! class_exists($checkoutRequestClass)) {
             throw new RuntimeException('vmt/payfast is not installed. Follow docs/PAYMENTS.md before checkout.');
         }
 
-        $gateway = app(\Vmt\PayFast\Contracts\PaymentGateway::class);
-        $checkout = $gateway->createCheckout(new \Vmt\PayFast\Data\CheckoutRequest(
+        $gateway = app($gatewayContract);
+        $checkoutRequest = new $checkoutRequestClass(
             reference: $order->reference,
             amountCents: $order->total_cents,
             itemName: 'ZOMNTU '.$order->reference,
             orderReference: $order->reference,
-        ));
+        );
+
+        $checkout = $gateway->createCheckout($checkoutRequest);
 
         $request->session()->forget('cart');
 

@@ -21,8 +21,10 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
 
-        if (class_exists(\Vmt\PayFast\Events\PaymentCompleted::class)) {
-            Event::listen(\Vmt\PayFast\Events\PaymentCompleted::class, CompleteZomntuOrder::class);
+        $eventClass = 'Vmt\\PayFast\\Events\\PaymentCompleted';
+
+        if (class_exists($eventClass)) {
+            Event::listen($eventClass, CompleteZomntuOrder::class);
         }
     }
 
