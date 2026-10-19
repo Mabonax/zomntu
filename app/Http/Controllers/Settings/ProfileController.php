@@ -14,9 +14,6 @@ use Symfony\Component\HttpFoundation\RedirectResponse as SymfonyRedirectResponse
 
 class ProfileController extends Controller
 {
-    /**
-     * Show the user's profile settings page.
-     */
     public function edit(Request $request): Response
     {
         return Inertia::render('settings/profile', [
@@ -24,9 +21,6 @@ class ProfileController extends Controller
         ]);
     }
 
-    /**
-     * Update the user's profile settings.
-     */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
         $request->user()->update(['name' => $request->name]);
@@ -36,13 +30,18 @@ class ProfileController extends Controller
         return to_route('profile.edit');
     }
 
-    /**
-     * Delete the user's account.
-     */
     public function destroy(AuthKitAccountDeletionRequest $request): SymfonyRedirectResponse
     {
+        $user = $request->user();
+
+        abort_if(
+            $user instanceof User && $user->isAdministrator(),
+            422,
+            'Administrator accounts cannot be deleted through self-service.',
+        );
+
         return $request->delete(
-            using: fn (User $user) => $user->delete(),
+            using: fn (User $account) => $account->delete(),
         );
     }
 }

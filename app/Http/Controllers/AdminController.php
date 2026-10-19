@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -117,19 +118,30 @@ class AdminController extends Controller
 
     public function storeCoupon(Request $request): RedirectResponse
     {
-        /** @var array{code:string,type:string,value:int,minimum?:numeric-string|int|float|null,usage_limit?:int|null,ends_at?:string|null} $data */
+        /** @var array{code:string,type:string,value:numeric-string|int|float,minimum?:numeric-string|int|float|null,usage_limit?:int|null,ends_at?:string|null} $data */
         $data = $request->validate([
             'code' => ['required', 'string', 'max:64', 'unique:coupons,code'],
             'type' => ['required', 'in:percent,fixed'],
-            'value' => ['required', 'integer', 'min:1'],
+            'value' => ['required', 'numeric', 'min:1'],
             'minimum' => ['nullable', 'numeric', 'min:0'],
             'usage_limit' => ['nullable', 'integer', 'min:1'],
             'ends_at' => ['nullable', 'date'],
         ]);
 
+        if ($data['type'] === 'percent' && (float) $data['value'] > 100) {
+            throw ValidationException::withMessages([
+                'value' => 'Percentage coupons cannot exceed 100%.',
+            ]);
+        }
+
+        $storedValue = $data['type'] === 'fixed'
+            ? (int) round((float) $data['value'] * 100)
+            : (int) round((float) $data['value']);
+
         Coupon::create([
-            ...Arr::except($data, ['minimum']),
+            ...Arr::except($data, ['minimum', 'value']),
             'code' => strtoupper($data['code']),
+            'value' => $storedValue,
             'minimum_cents' => (int) round((float) ($data['minimum'] ?? 0) * 100),
         ]);
 

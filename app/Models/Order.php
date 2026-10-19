@@ -10,7 +10,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
+ * @property int|null $user_id
  * @property string $reference
  * @property string $status
  * @property int $subtotal_cents
@@ -24,7 +24,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $paid_at
  * @property Carbon|null $shipped_at
  * @property Carbon|null $delivered_at
- * @property-read User $user
+ * @property-read User|null $user
  * @property-read Collection<int, OrderItem> $items
  */
 class Order extends Model
