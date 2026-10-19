@@ -31,8 +31,21 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Prepare SQLite
+        run: |
+          touch database/database.sqlite
+          cp .env.example .env
+          sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' .env
+          sed -i 's/^DB_DATABASE=.*/DB_DATABASE=database\/database.sqlite/' .env
+
       - name: Setup Application
         run: composer setup
+
+      - name: Audit production JavaScript dependencies
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Audit PHP dependencies
+        run: composer audit --locked --no-dev
 
       - name: Run CI Checks
         run: composer ci:check

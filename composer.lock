@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "97e6b1e78b1f490eb09bd3c7a5f3e18b",
+    "content-hash": "67a88be839062ffed9c8af2be691a1e0",
     "packages": [
         {
             "name": "brick/math",
@@ -6724,6 +6724,74 @@
             "time": "2026-08-24T18:07:49+00:00"
         },
         {
+            "name": "vmt/payfast",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Mabonax/vmt-payfast.git",
+                "reference": "1ed82901637866fb539aa05328ca60c95e4ac5bc"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Mabonax/vmt-payfast/zipball/1ed82901637866fb539aa05328ca60c95e4ac5bc",
+                "reference": "1ed82901637866fb539aa05328ca60c95e4ac5bc",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/database": "^12.0 || ^13.0",
+                "illuminate/encryption": "^12.0 || ^13.0",
+                "illuminate/http": "^12.0 || ^13.0",
+                "illuminate/routing": "^12.0 || ^13.0",
+                "illuminate/support": "^12.0 || ^13.0",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.0",
+                "orchestra/testbench": "^10.0 || ^11.0",
+                "phpunit/phpunit": "^11.5 || ^12.0"
+            },
+            "default-branch": true,
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Vmt\\PayFast\\Providers\\PayFastServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Vmt\\PayFast\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Vmt\\PayFast\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "phpunit"
+                ],
+                "format": [
+                    "pint"
+                ],
+                "check": [
+                    "@test",
+                    "pint --test"
+                ]
+            },
+            "license": [
+                "proprietary"
+            ],
+            "description": "Isolated, auditable PayFast hosted one-time payments for Laravel",
+            "support": {
+                "source": "https://github.com/Mabonax/vmt-payfast/tree/v0.1.0-rc.1",
+                "issues": "https://github.com/Mabonax/vmt-payfast/issues"
+            },
+            "time": "2026-10-18T15:00:37+00:00"
+        },
+        {
             "name": "voku/portable-ascii",
             "version": "2.1.1",
             "source": {
@@ -10681,7 +10749,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "vmt/payfast": 20
+    },
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
