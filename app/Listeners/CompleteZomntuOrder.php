@@ -6,39 +6,24 @@ use App\Models\Coupon;
 use App\Models\Order;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
+use Vmt\PayFast\Events\PaymentCompleted;
+use Vmt\PayFast\Services\FulfilmentService;
 
 final class CompleteZomntuOrder implements ShouldQueue
 {
-    public function handle(object $event): void
+    public function __construct(private readonly FulfilmentService $fulfilment) {}
+
+    public function handle(PaymentCompleted $event): void
     {
-        $transactionId = (string) data_get($event, 'transactionId');
-        $merchantIdentity = (string) data_get($event, 'merchantIdentity');
-        $tenantId = data_get($event, 'tenantId');
-
-        if ($transactionId === '' || $merchantIdentity === '') {
-            throw new RuntimeException('Invalid PayFast completion event payload.');
-        }
-
-        $fulfilmentClass = 'Vmt\\PayFast\\Services\\FulfilmentService';
-
-        if (! class_exists($fulfilmentClass)) {
-            throw new RuntimeException('vmt/payfast fulfilment service is unavailable.');
-        }
-
-        $fulfilment = app($fulfilmentClass);
-
-        $fulfilment->once(
-            $transactionId,
-            $merchantIdentity,
-            is_string($tenantId) ? $tenantId : null,
+        $this->fulfilment->once(
+            $event->transactionId,
+            $event->merchantIdentity,
+            $event->tenantId,
             'zomntu-order-paid-v2',
-            function ($payment) use ($transactionId): void {
-                DB::transaction(function () use ($transactionId, $payment): void {
-                    $orderReference = (string) data_get($payment, 'order_reference');
-
+            function ($payment) use ($event): void {
+                DB::transaction(function () use ($event, $payment): void {
                     $order = Order::query()
-                        ->where('reference', $orderReference)
+                        ->where('reference', $payment->order_reference)
                         ->lockForUpdate()
                         ->firstOrFail();
 
@@ -53,7 +38,9 @@ final class CompleteZomntuOrder implements ShouldQueue
 
                         foreach ($order->items as $item) {
                             if ($item->variant) {
-                                $variant = $item->variant()->lockForUpdate()->first();
+                                $variant = $item->variant()
+                                    ->lockForUpdate()
+                                    ->first();
 
                                 if (! $variant || $variant->availableStock() < $item->quantity) {
                                     $canRecover = false;
@@ -68,7 +55,7 @@ final class CompleteZomntuOrder implements ShouldQueue
                         if (! $canRecover) {
                             $order->update([
                                 'status' => 'payment_review',
-                                'payment_transaction_id' => $transactionId,
+                                'payment_transaction_id' => $event->transactionId,
                                 'paid_at' => now(),
                             ]);
 
@@ -77,20 +64,34 @@ final class CompleteZomntuOrder implements ShouldQueue
 
                         foreach ($order->items as $item) {
                             if ($item->variant) {
-                                $item->variant()->lockForUpdate()->first()?->increment('reserved_stock', $item->quantity);
+                                $item->variant()
+                                    ->lockForUpdate()
+                                    ->first()
+                                    ?->increment('reserved_stock', $item->quantity);
                             } else {
-                                $item->product()->lockForUpdate()->first()?->decrement('stock', $item->quantity);
+                                $item->product()
+                                    ->lockForUpdate()
+                                    ->first()
+                                    ?->decrement('stock', $item->quantity);
                             }
                         }
                     }
 
                     foreach ($order->items as $item) {
                         if ($item->variant) {
-                            $variant = $item->variant()->lockForUpdate()->first();
+                            $variant = $item->variant()
+                                ->lockForUpdate()
+                                ->first();
 
                             if ($variant) {
-                                $variant->reserved_stock = max(0, $variant->reserved_stock - $item->quantity);
-                                $variant->stock = max(0, $variant->stock - $item->quantity);
+                                $variant->reserved_stock = max(
+                                    0,
+                                    $variant->reserved_stock - $item->quantity,
+                                );
+                                $variant->stock = max(
+                                    0,
+                                    $variant->stock - $item->quantity,
+                                );
                                 $variant->save();
                             }
                         }
@@ -100,16 +101,17 @@ final class CompleteZomntuOrder implements ShouldQueue
                         Coupon::query()
                             ->where('code', $order->coupon_code)
                             ->lockForUpdate()
-                            ->first()?->increment('uses');
+                            ->first()
+                            ?->increment('uses');
                     }
 
                     $order->update([
                         'status' => 'paid',
-                        'payment_transaction_id' => $transactionId,
+                        'payment_transaction_id' => $event->transactionId,
                         'paid_at' => now(),
                     ]);
                 });
-            }
+            },
         );
     }
 }

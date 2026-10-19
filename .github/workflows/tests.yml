@@ -7,7 +7,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   ci:
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Setup PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
@@ -34,13 +34,16 @@ jobs:
       - name: Resolve VMT PayFast package
         run: composer update vmt/payfast --with-dependencies --no-interaction --no-scripts --no-install
 
-      - name: Upload resolved Composer lock
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: resolved-composer-lock
-          path: composer.lock
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit resolved Composer lock
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if ! git diff --quiet -- composer.lock; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add composer.lock
+            git commit -m "Lock VMT PayFast dependency"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
 
       - name: Prepare SQLite
         run: |

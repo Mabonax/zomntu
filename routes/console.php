@@ -6,8 +6,6 @@ Schedule::command('orders:release-expired')
     ->everyFiveMinutes()
     ->withoutOverlapping();
 
-if (class_exists('Vmt\\PayFast\\Console\\DispatchOutboxCommand')) {
-    Schedule::command('payfast:dispatch-outbox')
-        ->everyMinute()
-        ->withoutOverlapping();
-}
+Schedule::command('payfast:dispatch-outbox')
+    ->everyMinute()
+    ->withoutOverlapping();

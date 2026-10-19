@@ -12,10 +12,13 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use RuntimeException;
+use Vmt\PayFast\Contracts\PaymentGateway;
+use Vmt\PayFast\Data\CheckoutRequest;
 
 class CheckoutController extends Controller
 {
+    public function __construct(private readonly PaymentGateway $payments) {}
+
     public function __invoke(Request $request): Response
     {
         /** @var array{shipping_name:string,shipping_phone?:string|null,shipping_address:string,shipping_city:string,shipping_province:string,shipping_postal_code?:string|null,coupon?:string|null} $data */
@@ -58,7 +61,11 @@ class CheckoutController extends Controller
             foreach ($cart as $row) {
                 $productCandidate = $products->get($row['product_id']);
 
-                abort_unless($productCandidate instanceof Product && $productCandidate->is_active, 422, 'A product is no longer available.');
+                abort_unless(
+                    $productCandidate instanceof Product && $productCandidate->is_active,
+                    422,
+                    'A product is no longer available.',
+                );
 
                 $product = $productCandidate;
                 $variantCandidate = $row['variant_id'] !== null
@@ -76,12 +83,20 @@ class CheckoutController extends Controller
                         422,
                         'A selected size is no longer available.',
                     );
-                    abort_if($variant->availableStock() < $row['quantity'], 422, 'A selected size has sold out.');
+                    abort_if(
+                        $variant->availableStock() < $row['quantity'],
+                        422,
+                        'A selected size has sold out.',
+                    );
 
                     $variant->increment('reserved_stock', $row['quantity']);
                     $unitPrice = $variant->price_cents ?? $product->price_cents;
                 } else {
-                    abort_if($product->stock < $row['quantity'], 422, 'A product has sold out.');
+                    abort_if(
+                        $product->stock < $row['quantity'],
+                        422,
+                        'A product has sold out.',
+                    );
 
                     $product->decrement('stock', $row['quantity']);
                     $unitPrice = $product->price_cents;
@@ -95,6 +110,7 @@ class CheckoutController extends Controller
             $coupon = filled($data['coupon'] ?? null)
                 ? Coupon::query()
                     ->whereRaw('UPPER(code) = ?', [strtoupper((string) $data['coupon'])])
+                    ->lockForUpdate()
                     ->first()
                 : null;
             $discount = $coupon?->discountFor($subtotal) ?? 0;
@@ -129,39 +145,17 @@ class CheckoutController extends Controller
             return $order;
         });
 
-        $gatewayContract = 'Vmt\\PayFast\\Contracts\\PaymentGateway';
-        $checkoutRequestClass = 'Vmt\\PayFast\\Data\\CheckoutRequest';
-
-        if (! interface_exists($gatewayContract) || ! class_exists($checkoutRequestClass)) {
-            throw new RuntimeException('vmt/payfast is not installed. Follow docs/PAYMENTS.md before checkout.');
-        }
-
-        $gateway = app($gatewayContract);
-        $checkoutRequest = new $checkoutRequestClass(
+        $checkout = $this->payments->createCheckout(new CheckoutRequest(
             reference: $order->reference,
             amountCents: $order->total_cents,
             itemName: 'ZOMNTU '.$order->reference,
             orderReference: $order->reference,
-        );
+        ));
 
-        if (! is_callable([$gateway, 'createCheckout'])) {
-            throw new RuntimeException('Configured PayFast gateway cannot create a checkout.');
-        }
-
-        $checkout = call_user_func([$gateway, 'createCheckout'], $checkoutRequest);
-
-        if (! is_object($checkout) || ! is_callable([$checkout, 'toHtml'])) {
-            throw new RuntimeException('PayFast checkout response is invalid.');
-        }
-
-        $html = call_user_func([$checkout, 'toHtml']);
-
-        if (! is_string($html)) {
-            throw new RuntimeException('PayFast checkout HTML is invalid.');
-        }
-
+        $order->update(['payment_transaction_id' => $checkout->reference]);
         $request->session()->forget('cart');
 
-        return response($html)->header('Cache-Control', 'no-store');
+        return response($checkout->toHtml())
+            ->header('Cache-Control', 'no-store');
     }
 }

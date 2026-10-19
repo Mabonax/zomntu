@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Vmt\PayFast\Events\PaymentCompleted;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -21,11 +22,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
 
-        $eventClass = 'Vmt\\PayFast\\Events\\PaymentCompleted';
-
-        if (class_exists($eventClass)) {
-            Event::listen($eventClass, CompleteZomntuOrder::class);
-        }
+        Event::listen(PaymentCompleted::class, CompleteZomntuOrder::class);
     }
 
     protected function configureDefaults(): void
@@ -34,7 +31,12 @@ class AppServiceProvider extends ServiceProvider
         DB::prohibitDestructiveCommands(app()->isProduction());
 
         Password::defaults(fn (): ?Password => app()->isProduction()
-            ? Password::min(12)->mixedCase()->letters()->numbers()->symbols()->uncompromised()
+            ? Password::min(12)
+                ->mixedCase()
+                ->letters()
+                ->numbers()
+                ->symbols()
+                ->uncompromised()
             : null
         );
     }
