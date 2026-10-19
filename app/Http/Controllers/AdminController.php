@@ -46,12 +46,15 @@ class AdminController extends Controller
 
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('products', 'public');
+            $url = Storage::disk('public')->url($path);
+
             $product->images()->create([
-                'path' => Storage::disk('public')->url($path),
+                'path' => $url,
                 'alt' => $product->name,
                 'position' => 0,
             ]);
-            $product->update(['image_url' => Storage::disk('public')->url($path)]);
+
+            $product->update(['image_url' => $url]);
         }
 
         return back();
@@ -119,12 +122,29 @@ class AdminController extends Controller
     public function updateOrder(Request $request, Order $order): RedirectResponse
     {
         $data = $request->validate([
-            'status' => ['required', 'in:paid,payment_review,processing,shipped,delivered,cancelled'],
+            'status' => ['required', 'in:processing,shipped,delivered'],
             'tracking_number' => ['nullable', 'string', 'max:150'],
         ]);
 
+        $allowedTransitions = [
+            'paid' => ['processing'],
+            'processing' => ['shipped'],
+            'shipped' => ['delivered'],
+        ];
+
+        abort_unless(
+            in_array($data['status'], $allowedTransitions[$order->status] ?? [], true),
+            422,
+            'Invalid order status transition.'
+        );
+
+        if ($data['status'] === 'shipped') {
+            abort_if(blank($data['tracking_number'] ?? null), 422, 'A tracking number is required before shipping.');
+        }
+
         $order->update([
             ...$data,
+            'tracking_number' => $data['tracking_number'] ?? $order->tracking_number,
             'shipped_at' => $data['status'] === 'shipped' ? now() : $order->shipped_at,
             'delivered_at' => $data['status'] === 'delivered' ? now() : $order->delivered_at,
         ]);
